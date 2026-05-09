@@ -1,0 +1,258 @@
+// Prisma Schema - Loyalty Management System
+// Database: PostgreSQL (Supabase)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ──────────────────────────────────────────
+// ENUMS
+// ──────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  MERCHANT
+  SUPER_ADMIN
+}
+
+enum Tier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum TransactionType {
+  EARN
+  REDEEM
+  REFERRAL_BONUS
+  ADMIN_ADJUSTMENT
+  EXPIRY
+}
+
+enum CouponStatus {
+  ACTIVE
+  REDEEMED
+  EXPIRED
+}
+
+// ──────────────────────────────────────────
+// MODELS
+// ──────────────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  email         String   @unique
+  password      String?
+  role          Role     @default(CUSTOMER)
+  phone         String?
+  avatar        String?
+  isActive      Boolean  @default(true)
+  googleId      String?  @unique
+  referralCode  String   @unique @default(uuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  merchant         Merchant?
+  loyaltyPoints    LoyaltyPoints?
+  transactions     Transaction[]   @relation("CustomerTransactions")
+  coupons          Coupon[]
+  badges           Badge[]
+  referralsMade    Referral[]      @relation("ReferrerRelation")
+  referralsReceived Referral[]     @relation("RefereeRelation")
+  passwordResets   PasswordReset[]
+
+  @@map("users")
+}
+
+model Merchant {
+  id          String   @id @default(uuid())
+  storeName   String
+  description String?
+  address     String?
+  city        String?
+  logo        String?
+  website     String?
+  isActive    Boolean  @default(true)
+  pointsPerRupee Float @default(1.0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Owner relation
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId     String   @unique
+
+  // Relations
+  transactions Transaction[]
+  rewards      Reward[]
+  promotions   Promotion[]
+  coupons      Coupon[]
+  loyaltyRules LoyaltyRule[]
+
+  @@map("merchants")
+}
+
+model LoyaltyPoints {
+  id             String   @id @default(uuid())
+  points         Int      @default(0)
+  lifetimePoints Int      @default(0)
+  tier           Tier     @default(BRONZE)
+  updatedAt      DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+
+  @@map("loyalty_points")
+}
+
+model Transaction {
+  id             String          @id @default(uuid())
+  purchaseAmount Float?
+  pointsEarned   Int             @default(0)
+  pointsRedeemed Int             @default(0)
+  type           TransactionType @default(EARN)
+  description    String?
+  reference      String?
+  createdAt      DateTime        @default(now())
+
+  customer   User     @relation("CustomerTransactions", fields: [customerId], references: [id], onDelete: Cascade)
+  customerId String
+
+  merchant   Merchant? @relation(fields: [merchantId], references: [id])
+  merchantId String?
+
+  reward   Reward? @relation(fields: [rewardId], references: [id])
+  rewardId String?
+
+  @@index([customerId])
+  @@index([merchantId])
+  @@map("transactions")
+}
+
+model Reward {
+  id             String    @id @default(uuid())
+  name           String
+  description    String?
+  requiredPoints Int
+  stock          Int?
+  imageUrl       String?
+  isActive       Boolean   @default(true)
+  expiryDate     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchantId String
+
+  coupons      Coupon[]
+  transactions Transaction[]
+
+  @@index([merchantId])
+  @@map("rewards")
+}
+
+model Promotion {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  discount    Float     @default(0)
+  bonusPoints Int       @default(0)
+  minPurchase Float     @default(0)
+  imageUrl    String?
+  isActive    Boolean   @default(true)
+  expiryDate  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchantId String
+
+  @@index([merchantId])
+  @@map("promotions")
+}
+
+model Coupon {
+  id         String       @id @default(uuid())
+  code       String       @unique
+  status     CouponStatus @default(ACTIVE)
+  redeemedAt DateTime?
+  expiryDate DateTime?
+  createdAt  DateTime     @default(now())
+
+  customer   User   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customerId String
+
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  merchantId String
+
+  reward   Reward @relation(fields: [rewardId], references: [id])
+  rewardId String
+
+  @@index([code])
+  @@index([customerId])
+  @@map("coupons")
+}
+
+model Badge {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  icon        String
+  earnedAt    DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@map("badges")
+}
+
+model Referral {
+  id            String   @id @default(uuid())
+  pointsAwarded Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  referrer   User   @relation("ReferrerRelation", fields: [referrerId], references: [id])
+  referrerId String
+
+  referee   User   @relation("RefereeRelation", fields: [refereeId], references: [id])
+  refereeId String
+
+  @@map("referrals")
+}
+
+model LoyaltyRule {
+  id             String   @id @default(uuid())
+  name           String
+  pointsPerRupee Float    @default(1.0)
+  minPurchase    Float    @default(0)
+  bonusMultiplier Float   @default(1.0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchantId String
+
+  @@map("loyalty_rules")
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@map("password_resets")
+}
