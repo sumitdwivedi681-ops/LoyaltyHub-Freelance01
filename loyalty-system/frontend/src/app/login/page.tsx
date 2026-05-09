@@ -4,12 +4,13 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import { GoogleLogin } from '@react-oauth/google';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -22,6 +23,19 @@ export default function LoginPage() {
       router.push('/');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Invalid credentials');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    setLoading(true);
+    try {
+      await loginWithGoogle(credentialResponse.credential);
+      toast.success('Signed in with Google! 🚀');
+      router.push('/');
+    } catch (err: any) {
+      toast.error('Google login failed');
     } finally {
       setLoading(false);
     }
@@ -88,6 +102,24 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign In →'}
           </button>
         </form>
+
+        <div style={{ margin: '1.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }}></div>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>OR</span>
+          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }}></div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() => toast.error('Google login failed')}
+            useOneTap
+            theme="filled_blue"
+            shape="pill"
+            text="signin_with"
+            width="100%"
+          />
+        </div>
 
         <p style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
           Don&apos;t have an account?{' '}

@@ -12,14 +12,19 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
+import { OAuth2Client } from 'google-auth-library';
 
 @Injectable()
 export class AuthService {
+  private googleClient: OAuth2Client;
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
     private config: ConfigService,
-  ) {}
+  ) {
+    this.googleClient = new OAuth2Client(this.config.get('GOOGLE_CLIENT_ID'));
+  }
 
   async register(dto: RegisterDto) {
     // Check if email exists
@@ -98,6 +103,61 @@ export class AuthService {
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     const { password: _, ...userWithoutPassword } = user;
     return { user: userWithoutPassword, ...tokens };
+  }
+
+  async googleLogin(token: string) {
+    try {
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken: token,
+        audience: this.config.get('GOOGLE_CLIENT_ID'),
+      });
+      const payload = ticket.getPayload();
+      if (!payload) throw new BadRequestException('Invalid Google token');
+
+      const { email, name, sub: googleId, picture } = payload;
+
+      let user = await this.prisma.user.findUnique({
+        where: { email },
+        include: { loyaltyPoints: true, merchant: true },
+      });
+
+      if (!user) {
+        // Create new user
+        const referralCode = uuidv4().slice(0, 8).toUpperCase();
+        user = await this.prisma.user.create({
+          data: {
+            name: name || 'Google User',
+            email: email!,
+            googleId,
+            avatar: picture,
+            role: 'CUSTOMER',
+            referralCode,
+          },
+          include: { loyaltyPoints: true, merchant: true },
+        });
+
+        // Create loyalty wallet
+        await this.prisma.loyaltyPoints.create({
+          data: { userId: user.id, points: 0, lifetimePoints: 0 },
+        });
+      } else if (!user.googleId) {
+        // Link Google ID if not already linked
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: { googleId, avatar: user.avatar || picture },
+          include: { loyaltyPoints: true, merchant: true },
+        });
+      }
+
+      if (!user.isActive) throw new UnauthorizedException('Account is deactivated');
+
+      const tokens = await this.generateTokens(user.id, user.email, user.role);
+      const { password: _, ...userWithoutPassword } = user;
+      return { user: userWithoutPassword, ...tokens };
+    } catch (error) {
+      console.error('Google login error:', error);
+      throw new UnauthorizedException('Google authentication failed');
+    }
   }
 
   async refreshToken(token: string) {
