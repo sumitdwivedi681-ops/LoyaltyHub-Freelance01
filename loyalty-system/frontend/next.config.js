@@ -9,6 +9,9 @@ const withPWA = require('next-pwa')({
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  images: {
+    domains: ['ui-avatars.com', 'images.unsplash.com'],
+  },
 };
 
 module.exports = withPWA(nextConfig);
